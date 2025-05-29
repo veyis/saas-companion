@@ -4,6 +4,20 @@ import {auth} from "@clerk/nextjs/server";
 import {createSupabaseClient} from "@/lib/supabase";
 import { revalidatePath } from "next/cache";
 
+interface Companion {
+    id: string;
+    name: string;
+    subject: string;
+    topic: string;
+    duration: number;
+    author: string;
+    created_at: string;
+}
+
+interface SessionHistoryWithCompanion {
+    companions: Companion;
+}
+
 export const createCompanion = async (formData: CreateCompanion) => {
     const { userId: author } = await auth();
     const supabase = createSupabaseClient();
@@ -78,7 +92,15 @@ export const getRecentSessions = async (limit = 10) => {
 
     if(error) throw new Error(error.message);
 
-    return data.map(({ companions }) => companions);
+    // Ensure unique companions by using a Map
+    const uniqueCompanions = new Map<string, Companion>();
+    (data as unknown as SessionHistoryWithCompanion[]).forEach(({ companions }) => {
+        if (!uniqueCompanions.has(companions.id)) {
+            uniqueCompanions.set(companions.id, companions);
+        }
+    });
+
+    return Array.from(uniqueCompanions.values());
 }
 
 export const getUserSessions = async (userId: string, limit = 10) => {
@@ -92,7 +114,15 @@ export const getUserSessions = async (userId: string, limit = 10) => {
 
     if(error) throw new Error(error.message);
 
-    return data.map(({ companions }) => companions);
+    // Ensure unique companions by using a Map
+    const uniqueCompanions = new Map<string, Companion>();
+    (data as unknown as SessionHistoryWithCompanion[]).forEach(({ companions }) => {
+        if (!uniqueCompanions.has(companions.id)) {
+            uniqueCompanions.set(companions.id, companions);
+        }
+    });
+
+    return Array.from(uniqueCompanions.values());
 }
 
 export const getUserCompanions = async (userId: string) => {
@@ -142,14 +172,38 @@ export const addBookmark = async (companionId: string, path: string) => {
   const { userId } = await auth();
   if (!userId) return;
   const supabase = createSupabaseClient();
+
+  // First, ensure the user exists in Supabase
+  const { data: user, error: userError } = await supabase
+    .from('users')
+    .select()
+    .eq('id', userId)
+    .single();
+
+  if (userError && userError.code !== 'PGRST116') { // PGRST116 is "no rows returned" error
+    throw new Error(userError.message);
+  }
+
+  // If user doesn't exist, create them
+  if (!user) {
+    const { error: insertError } = await supabase
+      .from('users')
+      .insert({ id: userId });
+    
+    if (insertError) {
+      throw new Error(insertError.message);
+    }
+  }
+
+  // Now add the bookmark
   const { data, error } = await supabase.from("bookmarks").insert({
     companion_id: companionId,
     user_id: userId,
   });
+  
   if (error) {
     throw new Error(error.message);
   }
-  // Revalidate the path to force a re-render of the page
 
   revalidatePath(path);
   return data;
@@ -176,11 +230,19 @@ export const getBookmarkedCompanions = async (userId: string) => {
   const supabase = createSupabaseClient();
   const { data, error } = await supabase
     .from("bookmarks")
-    .select(`companions:companion_id (*)`) // Notice the (*) to get all the companion data
+    .select(`companions:companion_id (*)`)
     .eq("user_id", userId);
   if (error) {
     throw new Error(error.message);
   }
-  // We don't need the bookmarks data, so we return only the companions
-  return data.map(({ companions }) => companions);
+  
+  // Ensure unique companions by using a Map
+  const uniqueCompanions = new Map<string, Companion>();
+  (data as unknown as SessionHistoryWithCompanion[]).forEach(({ companions }) => {
+    if (!uniqueCompanions.has(companions.id)) {
+      uniqueCompanions.set(companions.id, companions);
+    }
+  });
+
+  return Array.from(uniqueCompanions.values());
 };
