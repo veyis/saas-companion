@@ -32,11 +32,15 @@ const CompanionCard = ({
       await addBookmark(id, pathname);
     }
   };
+
   return (
-    <article className="companion-card" style={{ backgroundColor: color }}>
+    <article 
+      className="companion-card" 
+      data-color={color}
+    >
       <div className="flex justify-between items-center">
         <div className="subject-badge">{subject}</div>
-        <button className="companion-bookmark" onClick={handleBookmark}>
+        <button type="button" aria-label={bookmarked ? "Remove bookmark" : "Add bookmark"} className="companion-bookmark" onClick={handleBookmark}>
           <Image
             src={
               bookmarked ? "/icons/bookmark-filled.svg" : "/icons/bookmark.svg"
